@@ -1,0 +1,314 @@
+from flask import Flask, jsonify, request
+from main import app, con
+from funcao import validar_senha, cripytrografa, autenticar_usuario
+from flask_bcrypt import check_password_hash
+from fpdf import FPDF
+from flask import send_file
+
+@app.route('/livro', methods=['GET'])
+def livro():
+    try:
+        cur =con.cursor()
+        cur.execute('SELECT id_livros, titulo, autor, ano_publicacao from livro')
+        livros = cur.fetchall()
+        livros_lista = []
+        for livro in livros:
+            livros_lista.append({
+                'id_livros':livro[0]
+                , 'titulo':livro[1]
+                , 'autor':livro[2]
+                , 'ano_publicacao':livro[3]
+            })
+
+        return jsonify(mensagem='lista de livros', livros=livros_lista)
+    except Exception as e:
+        return jsonify({"message": "deu ruim"}), 500
+    finally:
+        cur.close()
+
+@app.route('/adicionar_livro', methods=['POST'])
+def adicionar_livro():
+    dados = request.get_json()
+    titulo = dados.get('titulo')
+    autor = dados.get('autor')
+    ano_publicacao = dados.get('ano_publicacao')
+
+    try:
+        cursor = con.cursor()
+
+        cursor.execute(
+            "SELECT 1 FROM LIVROS WHERE TITULO = ?",
+            (titulo,)
+        )
+
+        if cursor.fetchone():
+            return jsonify(mensagem="JÁ TEM LIVRO COM ESSE NOME"), 400
+
+        cursor.execute("""
+            INSERT INTO LIVROS (TITULO, AUTOR, ANO_PUBLICACAO)
+            VALUES (?, ?, ?)
+        """, (titulo, autor, ano_publicacao))
+
+        con.commit()
+
+        return jsonify({
+            'message': 'Livro cadastrado com sucesso',
+            'livro': {
+                'titulo': titulo,
+                'autor': autor,
+                'ano_publicacao': ano_publicacao
+            }
+        }), 201
+
+    except Exception as e:
+        return jsonify(mensagem="Deu ruim no adicionar livros"), 500
+
+    finally:
+        cursor.close()
+
+
+
+
+
+
+
+
+
+@app.route('/editar_livros/<int:id>', methods=['PUT'])
+def editar_Livros(id):
+    cur = con.cursor()
+    cur.execute("""select id_livros, titulo, autor, ano_publicacao
+                    from livro
+                    where id_livros = ? """, (id,))
+    tem_livro = cur.fetchone()
+    if not tem_livro:
+        cur.close()
+        return jsonify({"error": "livro não encontrado"}), 404
+
+    data = request.get_json()
+    titulo = data.get('titulo')
+    autor = data.get('autor')
+    ano_publicacao = data.get('ano_publicacao')
+
+
+    cur.execute(""" update livro set titulo = ?, autor = ?, ano_publicacao = ?
+                where id_livros = ? """, (titulo, autor, ano_publicacao, id))
+    con.commit()
+    cur.close()
+
+    return jsonify({'message': 'Livro autalizado com sucesso',
+                    'livro':
+                        {
+                            'id_livro': id,
+                            'titulo': titulo,
+                            'autor': autor,
+                            'ano_publicacao': ano_publicacao
+                        }
+                    })
+
+@app.route('/deletar_livros/<int:id>', methods=['DELETE'])
+def deletar_livros(id):
+    cur = con.cursor()
+    cur.execute("select 1 from livro where id_livros = ?", (id,))
+    if not cur.fetchone():
+        cur.close()
+        return jsonify({"error": "livro nao encontrado"}), 404
+
+    cur.execute("delete from livro where id_livros = ?", (id,))
+    con.commit()
+    cur.close()
+
+    return jsonify(
+        {
+            "message": "Livro excluido com sucesso",
+            'id_livro': id
+        }
+    )
+
+
+@app.route('/usuario', methods=['GET'])
+def usuario():
+    try:
+        cur = con.cursor()
+        cur.execute('SELECT id_usuario, nome, usuario, senha FROM usuario')
+        usuarios = cur.fetchall()
+
+        usuarios_lista = []
+        for u in usuarios:
+            usuarios_lista.append({
+                'id_usuario': u[0],
+                'nome': u[1],
+                'usuario': u[2],
+                'senha': u[3]
+            })
+
+        return jsonify(mensagem='lista de usuarios', usuarios=usuarios_lista)
+
+    except Exception as e:
+        return jsonify({"message": "deu ruim"}), 500
+
+    finally:
+        cur.close()
+
+
+@app.route('/adicionar_usuario', methods=['POST'])
+def adicionar_usuario():
+    dados = request.get_json()
+    nome = dados.get('nome')
+    usuario = dados.get('usuario')
+    senha = dados.get('senha')
+
+    if not validar_senha(senha):
+        return jsonify({"error": "Senha fraca"}), 400
+    senha_criptografada = cripytrografa(senha)
+
+    cursor = con.cursor()
+
+    cursor.execute(
+        "SELECT 1 FROM USUARIO WHERE nome = ?",
+        (nome,))
+    if cursor.fetchone():
+        return jsonify({"error": "Já existe usuário com esse nome"}), 400
+
+    cursor.execute("""
+        INSERT INTO USUARIO (NOME, USUARIO, SENHA)
+        VALUES (?, ?, ?)
+    """, (nome, usuario, senha_criptografada))
+
+    con.commit()
+    return jsonify({
+        "message": "Usuário cadastrado com sucesso",
+        "usuario": {
+            "nome": nome,
+            "usuario": usuario
+        }
+    }), 201
+
+@app.route('/deletar_usuario/<int:id>', methods=['DELETE'])
+def deletar_usuario(id):
+    cur = con.cursor()
+    cur.execute("select 1 from usuario where id_usuario = ?", (id,))
+    if not cur.fetchone():
+        cur.close()
+        return jsonify({"error": "usuario nao encontrado"}), 404
+
+    cur.execute("delete from usuario where id_usuario = ?", (id,))
+    con.commit()
+    cur.close()
+
+    return jsonify(
+        {
+            "message": "usuario excluido com sucesso",
+            'id_usuario': id
+        }
+    )
+
+@app.route('/editar_usuario/<int:id>', methods=['PUT'])
+def editar_usuario(id):
+    cur = con.cursor()
+    cur.execute("""select id_usuario, nome, usuario, senha
+                    from usuario
+                    where id_usuario = ? """, (id,))
+    tem_usuario = cur.fetchone()
+    if not tem_usuario:
+        cur.close()
+        return jsonify({"error": "usuario não encontrado"}), 404
+
+    data = request.get_json()
+    nome = data.get('nome')
+    usuario = data.get('usuario')
+    senha = data.get('senha')
+
+
+    cur.execute(""" update usuario set nome = ?, usuario = ?, senha = ?
+                where id_usuario = ? """, (nome, usuario, senha, id))
+    con.commit()
+    cur.close()
+
+    return jsonify({'message': 'usuario autalizado com sucesso',
+                    'usuario':
+                        {
+                            'id_usuario': id,
+                            'nome': nome,
+                            'usuario': usuario,
+                            'senha': senha
+                        }
+                    })
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    dados = request.get_json()
+
+    usuario = dados.get('usuario')
+    senha = dados.get('senha')
+    try:
+        cur = con.cursor()
+        cur.execute("select id_usuario, nome, usuario, senha from usuario where usuario = ?", (usuario, ))
+        usuario = cur.fetchone()
+        if not usuario:
+            return jsonify(message="error")
+        senha_dobanco = usuario[3]
+
+        if not check_password_hash(senha_dobanco, senha):
+            return jsonify(message='error')
+        return jsonify(message="login efetuado com sucesso")
+    except:
+        return jsonify(message="erro no login")
+    finally:
+        con.close()
+
+@app.route('/livros_relatorio', methods=['GET'])
+def livros_relatorio():
+    cursor = con.cursor()
+    cursor.execute("SELECT id_livros, titulo, autor, ano_publicacao FROM livro")
+    livros = cursor.fetchall()
+    cursor.close()
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", style='B', size=16)
+    pdf.cell(200, 10, "Relatorio de Livros", ln=True, align='C')
+    pdf.ln(5)  # Espaço entre o título e a linha
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())  # Linha abaixo do título
+    pdf.ln(5)  # Espaço após a linha
+    pdf.set_font("Arial", size=12)
+    for livro in livros:
+        pdf.cell(200, 10, f"ID: {livro[0]} - {livro[1]} - {livro[2]} - {livro[3]}", ln=True)
+    contador_livros = len(livros)
+    pdf.ln(10)  # Espaço antes do contador
+    pdf.set_font("Arial", style='B', size=12)
+    pdf.cell(200, 10, f"Total de livros cadastrados: {contador_livros}", ln=True, align='C')
+    pdf_path = "relatorio_livros.pdf"
+    pdf.output(pdf_path)
+    return send_file(pdf_path, as_attachment=True, mimetype='application/pdf')
+
+
+@app.route('/usuario_relatorio', methods=['GET'])
+def usuario_relatorio():
+    cursor = con.cursor()
+    cursor.execute("SELECT id_usuario, nome, usuario, FROM usuario")
+    usuario = cursor.fetchall()
+    cursor.close()
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", style='B', size=16)
+    pdf.cell(200, 10, "Relatorio de Livros", ln=True, align='C')
+    pdf.ln(5)  # Espaço entre o título e a linha
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())  # Linha abaixo do título
+    pdf.ln(5)  # Espaço após a linha
+    pdf.set_font("Arial", size=12)
+    for usuario in usuario:
+        pdf.cell(200, 10, f"ID: {usuario[0]} - {usuario[1]} - {usuario[2]}", ln=True)
+    contador_usuario = len(usuario)
+    pdf.ln(10)  # Espaço antes do contador
+    pdf.set_font("Arial", style='B', size=12)
+    pdf.cell(200, 10, f"Total de usuario cadastrados: {contador_usuario}", ln=True, align='C')
+    pdf_path = "relatorio_usuario.pdf"
+    pdf.output(pdf_path)
+    return send_file(pdf_path, as_attachment=True, mimetype='application/pdf')
+
+

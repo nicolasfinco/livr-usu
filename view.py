@@ -4,6 +4,10 @@ from funcao import validar_senha, cripytrografa, autenticar_usuario
 from flask_bcrypt import check_password_hash
 from fpdf import FPDF
 from flask import send_file
+import os
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
 @app.route('/livro', methods=['GET'])
 def livro():
@@ -28,16 +32,16 @@ def livro():
 
 @app.route('/adicionar_livro', methods=['POST'])
 def adicionar_livro():
-    dados = request.get_json()
-    titulo = dados.get('titulo')
-    autor = dados.get('autor')
-    ano_publicacao = dados.get('ano_publicacao')
-
     try:
+        titulo = request.form.get('titulo')
+        autor = request.form.get('autor')
+        ano_publicacao = request.form.get('ano_publicacao')
+        imagem = request.files.get('imagem')
+
         cursor = con.cursor()
 
         cursor.execute(
-            "SELECT 1 FROM LIVROS WHERE TITULO = ?",
+            "SELECT 1 FROM LIVRO WHERE TITULO = ?",
             (titulo,)
         )
 
@@ -45,11 +49,22 @@ def adicionar_livro():
             return jsonify(mensagem="JÁ TEM LIVRO COM ESSE NOME"), 400
 
         cursor.execute("""
-            INSERT INTO LIVROS (TITULO, AUTOR, ANO_PUBLICACAO)
-            VALUES (?, ?, ?)
+            INSERT INTO LIVRO (TITULO, AUTOR, ANO_PUBLICACAO)
+            VALUES (?, ?, ?) RETURNING id_livros
         """, (titulo, autor, ano_publicacao))
 
+        codigo_livro = cur.fetchone()[0]
+
         con.commit()
+
+        caminho_imagem = None
+
+        if imagem:
+            nome_imagem = f"{codigo_livro}.jpg"
+            caminho_imagem_destino = os.path.join(app.config['UPLOAD_FOLDER'], "Livros")
+            os.makedirs(caminho_imagem_destino, exist_ok=True)
+            caminho_imagem = os.path.join(caminho_imagem_destino, nome_imagem)
+            imagem.save(caminho_imagem)
 
         return jsonify({
             'message': 'Livro cadastrado com sucesso',
@@ -60,18 +75,11 @@ def adicionar_livro():
             }
         }), 201
 
+        return jsonify(mensagem='Lista de livros', livro=livro_list)
     except Exception as e:
-        return jsonify(mensagem="Deu ruim no adicionar livros"), 500
-
+        return jsonify(mensagem=f"Erro ao consultar banco de dados: {e}"),500
     finally:
         cursor.close()
-
-
-
-
-
-
-
 
 
 @app.route('/editar_livros/<int:id>', methods=['PUT'])
@@ -288,7 +296,7 @@ def livros_relatorio():
 @app.route('/usuario_relatorio', methods=['GET'])
 def usuario_relatorio():
     cursor = con.cursor()
-    cursor.execute("SELECT id_usuario, nome, usuario, FROM usuario")
+    cursor.execute("SELECT id_usuario, nome, usuario FROM usuario")
     usuario = cursor.fetchall()
     cursor.close()
 
@@ -296,7 +304,7 @@ def usuario_relatorio():
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", style='B', size=16)
-    pdf.cell(200, 10, "Relatorio de Livros", ln=True, align='C')
+    pdf.cell(200, 10, "Relatorio de usuarios", ln=True, align='C')
     pdf.ln(5)  # Espaço entre o título e a linha
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())  # Linha abaixo do título
     pdf.ln(5)  # Espaço após a linha

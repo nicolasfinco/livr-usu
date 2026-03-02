@@ -1,10 +1,13 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from main import app, con
-from funcao import validar_senha, cripytrografa, autenticar_usuario
+from funcao import validar_senha, cripytrografa, autenticar_usuario, enviando_email
 from flask_bcrypt import check_password_hash
 from fpdf import FPDF
 from flask import send_file
 import os
+import pygal
+
+import threading
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -53,7 +56,7 @@ def adicionar_livro():
             VALUES (?, ?, ?) RETURNING id_livros
         """, (titulo, autor, ano_publicacao))
 
-        codigo_livro = cur.fetchone()[0]
+        codigo_livro = cursor.fetchone()[0]
 
         con.commit()
 
@@ -320,3 +323,33 @@ def usuario_relatorio():
     return send_file(pdf_path, as_attachment=True, mimetype='application/pdf')
 
 
+@app.route('/grafico', methods=['GET'])
+def grafico():
+    cur = con.cursor()
+    cur.execute("""SELECT ano_publicacao, count(*)
+                   FROM Livro
+                   group by ano_publicacao
+                   order by ano_publicacao
+                """)
+    resultado = cur.fetchall()
+    cur.close()
+
+    grafico = pygal.Bar()
+    grafico._title = 'Quantidade de Livros por ano'
+
+    for g in resultado:
+        grafico.add(str(g[0]), g[1])
+    return Response(grafico.render(), mimetype='image/svg+xml')
+
+@app.route('/enviar_email', methods=['GET'])
+def enviar_email():
+    dados = request.json
+    assunto = dados.get('assunto')
+    mensagem = dados.get('mensagem')
+    destinatario = dados.get('to')
+
+    thread = threading.Thread(target=enviando_email,
+                              args=(assunto, mensagem, destinatario))
+    thread.start()
+
+    return jsonify({'assunto': "enviado com sucesso!"})

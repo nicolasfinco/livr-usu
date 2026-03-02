@@ -1,5 +1,12 @@
 from flask_bcrypt import generate_password_hash
 
+
+import smtplib
+from email.mime.text import MIMEText
+
+
+
+
 def validar_senha(senha) :
 
     maiuscula = minuscula = numero = caracterpcd = oito = False
@@ -49,3 +56,18 @@ def autenticar_usuario(con, usuario, senha):
 
     finally:
         cursor.close()
+
+def enviando_email(destinatario, assunto, mensagem):
+    user = 'Lais@prossora'
+    senha = 'zfhl glqx qyuv ovzx'
+
+    msg = MIMEText(mensagem)
+    msg['From'] = user
+    msg['To'] = destinatario
+    msg['Subject'] = assunto
+
+    server = smtplib.SMTP('smtp.gmail.com', 587)
+    server.starttls()
+    server.login(user, senha)
+    server.send_message(msg)
+    server.quit()

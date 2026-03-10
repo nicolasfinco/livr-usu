@@ -1,11 +1,13 @@
-from flask import Flask, jsonify, request, Response
+from flask import jsonify, request, Response,make_response
 from main import app, con
-from funcao import validar_senha, cripytrografa, autenticar_usuario, enviando_email
-from flask_bcrypt import check_password_hash
+from flask_bcrypt import generate_password_hash, check_password_hash
+from funcao import validar_senha, cripytrografa, gerar_token, enviando_email
 from fpdf import FPDF
 from flask import send_file
 import os
 import pygal
+import jwt
+import bcrypt
 
 import threading
 
@@ -14,6 +16,19 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 @app.route('/livro', methods=['GET'])
 def livro():
+    token = request.cookies.get('access_token')
+
+    if not token:
+        return jsonify({'message': 'token necessario'}), 401
+
+    try:
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({'message': 'token expirado'}), 401
+
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'token invalido'}), 401
     try:
         cur =con.cursor()
         cur.execute('SELECT id_livros, titulo, autor, ano_publicacao from livro')
@@ -247,27 +262,80 @@ def editar_usuario(id):
                     })
 
 
+
+
 @app.route('/login', methods=['POST'])
 def login():
+
     dados = request.get_json()
-
-    usuario = dados.get('usuario')
+    nome_usuario = dados.get('usuario')
     senha = dados.get('senha')
-    try:
-        cur = con.cursor()
-        cur.execute("select id_usuario, nome, usuario, senha from usuario where usuario = ?", (usuario, ))
-        usuario = cur.fetchone()
-        if not usuario:
-            return jsonify(message="error")
-        senha_dobanco = usuario[3]
 
-        if not check_password_hash(senha_dobanco, senha):
-            return jsonify(message='error')
-        return jsonify(message="login efetuado com sucesso")
-    except:
-        return jsonify(message="erro no login")
-    finally:
-        con.close()
+    cursor = con.cursor()
+
+    cursor.execute("""
+        SELECT ID_USUARIO, USUARIO, SENHA
+        FROM USUARIO
+        WHERE USUARIO = ?
+    """, (nome_usuario,))
+
+    usuario = cursor.fetchone()
+
+    if not usuario:
+        return jsonify({'mensagem': 'usuario ou senha invalida'}), 401
+
+    senha_banco = usuario[2]
+    id_usuario = usuario[0]
+
+    if not check_password_hash(senha_banco, senha):
+        return jsonify({'mensagem': 'usuario ou senha invalida'}), 401
+
+    token = gerar_token(id_usuario)
+
+    resposta = make_response(jsonify({'mensagem': 'login com sucesso'}), 200)
+
+    resposta.set_cookie(
+        'access_token',
+        token,
+        httponly=True,
+        secure=False,
+        samesite='Lax',
+        path="/",
+        max_age=3600
+    )
+
+    return resposta
+# @app.route('/login', methods=['POST'])
+# def login():
+#     dados = request.get_json()
+#
+#     usuario = dados.get('usuario')
+#     senha = dados.get('senha')
+#
+#     try:
+#         cur = con.cursor()
+#
+#         cur.execute("select id_usuario, nome, usuario, senha from usuario where usuario = ?", (usuario,))
+#         usuario_db = cur.fetchone()
+#
+#         if not usuario_db:
+#             return jsonify({"message": "usuario ou senha invalido"}), 401
+#
+#         senha_dobanco = usuario_db[3]
+#         id_usuario = usuario_db[0]
+#
+#         if not check_password_hash(senha_dobanco, senha):
+#             return jsonify({"message": "usuario ou senha invalido"}), 401
+#
+#         token = gerar_token(id_usuario)
+#
+#         return jsonify({
+#             "message": "login efetuado",
+#             "token": token
+#         })
+#
+#     except:
+#         return jsonify({"message": "erro no login"}), 500
 
 @app.route('/livros_relatorio', methods=['GET'])
 def livros_relatorio():

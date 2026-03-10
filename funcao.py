@@ -1,13 +1,13 @@
 from flask_bcrypt import generate_password_hash
-
-
+from main import app
 import smtplib
 from email.mime.text import MIMEText
+import jwt
+import datetime
 
 
 
-
-def validar_senha(senha) :
+def validar_senha(senha):
 
     maiuscula = minuscula = numero = caracterpcd = oito = False
 
@@ -26,6 +26,8 @@ def validar_senha(senha) :
 
     if (oito and maiuscula and minuscula and numero and caracterpcd):
         return True
+
+    return False
 
 def cripytrografa(senha):
     return generate_password_hash(senha).decode('utf-8')
@@ -71,3 +73,18 @@ def enviando_email(destinatario, assunto, mensagem):
     server.login(user, senha)
     server.send_message(msg)
     server.quit()
+
+def gerar_token(id_usuario):
+    payload = {
+        'id_usuario': id_usuario,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+    }
+
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    return token
+
+
+def remover_bearer(token):
+    if token.startswith('Bearer '):
+        return token[len('Bearer '):]
+    return token

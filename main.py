@@ -1,8 +1,10 @@
 from flask import Flask
 import fdb
+from flask_cors import CORS
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
+CORS(app, origins="*")
 
 host = app.config['DB_HOST']
 database = app.config['DB_NAME']
